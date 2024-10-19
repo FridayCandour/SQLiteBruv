@@ -4,7 +4,7 @@ export class SqliteBruv<T = Record<string, Params>> {
   private db: any;
   private _columns: string[] = ["*"];
   private _conditions: string[] = [];
-  private _tableName: string = "";
+  private _tableName?: string = undefined;
   private _params: Params[] = [];
   private _limit?: number;
   private _offset?: number;
@@ -76,7 +76,6 @@ export class SqliteBruv<T = Record<string, Params>> {
   }
   get(): Promise<T[]> {
     const { query, params } = this.build();
-    this.clear();
     if (this._query) {
       return { query, params } as unknown as Promise<T[]>;
     }
@@ -84,7 +83,6 @@ export class SqliteBruv<T = Record<string, Params>> {
   }
   getOne(): Promise<T> {
     const { query, params } = this.build();
-    this.clear();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
     }
@@ -153,7 +151,7 @@ export class SqliteBruv<T = Record<string, Params>> {
     this._limit = undefined;
     this._offset = undefined;
     this._orderBy = undefined;
-    this._tableName = "";
+    this._tableName = undefined;
   }
   async run(
     query: string,
