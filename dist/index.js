@@ -146,12 +146,12 @@ export class SqliteBruv {
                 body: JSON.stringify({ sql: query, params }),
             });
             const data = await res.json();
-            if (data.success && data.result.success) {
+            if (data.success && data.result[0].success) {
                 if (single) {
-                    return data.result.results[0];
+                    return data.result[0].results[0];
                 }
                 else {
-                    return data.result.results;
+                    return data.result[0].results;
                 }
             }
             throw new Error(JSON.stringify(data.errors));
