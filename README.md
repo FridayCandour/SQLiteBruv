@@ -13,7 +13,7 @@ Key Features:
 - Zero Deps
 
 <div style="width: 100%; display: flex;">
-<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/icon.png?raw=true" style="max-width: 220px; margin: 0 auto;" />
+<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/icon.png?raw=true" style="width: 220px; margin: 0 auto;" />
 </div>
 
 ## Installation
@@ -184,5 +184,5 @@ creates issues and pull requests.
 ## Support
 
 <div style="width: 100%; display: flex;">
-<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/qrcode.png?raw=true" style="max-width: 220px; margin: 0 auto;" />
+<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/qrcode.png?raw=true" style="width: 220px; margin: 0 auto;" />
 </div>
