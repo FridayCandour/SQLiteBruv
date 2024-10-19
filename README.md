@@ -12,9 +12,9 @@ Key Features:
 - Provides raw query.
 - Zero Deps
 
-<div style="width: 100%; display: flex;">
-<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/icon.png?raw=true" style="width: 220px; margin: 0 auto;" />
-</div>
+<center>
+<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/icon.png?raw=true" style="width: 320px; margin: auto;" />
+</center>
 
 ## Installation
 
@@ -183,6 +183,6 @@ creates issues and pull requests.
 
 ## Support
 
-<div style="width: 100%; display: flex;">
-<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/qrcode.png?raw=true" style="width: 220px; margin: 0 auto;" />
-</div>
+<center>
+<img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/qrcode.png?raw=true" style="width: 320px; margin: auto;" />
+</center>
