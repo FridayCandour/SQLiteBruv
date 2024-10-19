@@ -79,14 +79,14 @@ export class SqliteBruv<T = Record<string, Params>> {
     if (this._query) {
       return { query, params } as unknown as Promise<T[]>;
     }
-    return this.run(query, params, { single: false, many: true });
+    return this.run(query, params, { single: false });
   }
   getOne(): Promise<T> {
     const { query, params } = this.build();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
     }
-    return this.run(query, params, { single: true, many: false });
+    return this.run(query, params, { single: true });
   }
   insert(data: Partial<T>): Promise<T> {
     const columns = Object.keys(data).join(", ");
@@ -156,9 +156,8 @@ export class SqliteBruv<T = Record<string, Params>> {
   async run(
     query: string,
     params: (string | number | null | boolean)[],
-    { single, many }: { single: boolean; many: boolean } = {
+    { single }: { single: boolean } = {
       single: false,
-      many: false,
     }
   ) {
     if (this._D1_api_key) {
@@ -171,16 +170,19 @@ export class SqliteBruv<T = Record<string, Params>> {
         body: JSON.stringify({ sql: query, params }),
       });
       const data = await res.json();
-      if (data.success) {
-        console.log(JSON.stringify({ data, sql: query, params }, null, 2));
-        return data.result;
+      if (data.success && data.result.success) {
+        if (single) {
+          return data.result.results[0];
+        } else {
+          return data.result.results;
+        }
       }
       throw new Error(JSON.stringify(data.errors));
     }
     if (single) {
       return this.db.query(query, params).get();
     }
-    if (many) {
+    if (single === false) {
       return this.db.query(query, params).all();
     }
     return this.db.run(query, params);

@@ -2,7 +2,7 @@ export class SqliteBruv {
     db;
     _columns = ["*"];
     _conditions = [];
-    _tableName = "";
+    _tableName = undefined;
     _params = [];
     _limit;
     _offset;
@@ -60,7 +60,6 @@ export class SqliteBruv {
     }
     get() {
         const { query, params } = this.build();
-        this.clear();
         if (this._query) {
             return { query, params };
         }
@@ -68,7 +67,6 @@ export class SqliteBruv {
     }
     getOne() {
         const { query, params } = this.build();
-        this.clear();
         if (this._query) {
             return { query, params };
         }
@@ -133,7 +131,7 @@ export class SqliteBruv {
         this._limit = undefined;
         this._offset = undefined;
         this._orderBy = undefined;
-        this._tableName = "";
+        this._tableName = undefined;
     }
     async run(query, params, { single, many } = {
         single: false,

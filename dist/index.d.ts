@@ -3,7 +3,7 @@ export declare class SqliteBruv<T = Record<string, Params>> {
     private db;
     private _columns;
     private _conditions;
-    private _tableName;
+    private _tableName?;
     private _params;
     private _limit?;
     private _offset?;
