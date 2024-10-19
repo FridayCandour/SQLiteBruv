@@ -36,7 +36,7 @@ export class SqliteBruv<T = Record<string, Params>> {
       this._query = true;
     }
   }
-  from<Model extends Record<string, Params> = Record<string, Params>>(
+  from<Model extends Record<string, any> = Record<string, any>>(
     tableName: string
   ) {
     this._tableName = tableName;
@@ -90,27 +90,27 @@ export class SqliteBruv<T = Record<string, Params>> {
     }
     return this.run(query, params, { single: true, many: false });
   }
-  insert(data: object): Promise<T> {
+  insert(data: Partial<T>): Promise<T> {
     const columns = Object.keys(data).join(", ");
     const placeholders = Object.keys(data)
       .map(() => "?")
       .join(", ");
     const query = `INSERT INTO ${this._tableName} (${columns}) VALUES (${placeholders})`;
-    const params = Object.values(data);
+    const params = Object.values(data) as Params[];
     this.clear();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
     }
     return this.run(query, params);
   }
-  update(data: object): Promise<T> {
+  update(data: Partial<T>): Promise<T> {
     const columns = Object.keys(data)
       .map((column) => `${column} = ?`)
       .join(", ");
     const query = `UPDATE ${
       this._tableName
     } SET ${columns} ${this._conditions.join(" AND ")}`;
-    const params = [...Object.values(data), ...this._params];
+    const params = [...(Object.values(data) as Params[]), ...this._params];
     this.clear();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
