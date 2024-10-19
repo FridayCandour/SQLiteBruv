@@ -2,14 +2,14 @@ type Params = string | number | null | boolean;
 
 export class SqliteBruv<T = Record<string, Params>> {
   private db: any;
-  _columns: string[] = ["*"];
-  _conditions: string[] = [];
-  _tableName: string = "blablabla";
-  _params: Params[] = [];
-  _limit?: number;
-  _offset?: number;
-  _orderBy?: { column: string; direction: "ASC" | "DESC" };
-  _query: boolean = false;
+  private _columns: string[] = ["*"];
+  private _conditions: string[] = [];
+  private _tableName: string = "";
+  private _params: Params[] = [];
+  private _limit?: number;
+  private _offset?: number;
+  private _orderBy?: { column: string; direction: "ASC" | "DESC" };
+  private _query: boolean = false;
   private _D1_api_key?: string;
   private _D1_url?: string;
   constructor(
@@ -150,7 +150,7 @@ export class SqliteBruv<T = Record<string, Params>> {
     this._limit = undefined;
     this._offset = undefined;
     this._orderBy = undefined;
-    this._tableName = "blablabla";
+    this._tableName = "";
   }
   async run(
     query: string,
