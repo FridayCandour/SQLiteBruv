@@ -63,14 +63,14 @@ export class SqliteBruv {
         if (this._query) {
             return { query, params };
         }
-        return this.run(query, params, { single: false, many: true });
+        return this.run(query, params, { single: false });
     }
     getOne() {
         const { query, params } = this.build();
         if (this._query) {
             return { query, params };
         }
-        return this.run(query, params, { single: true, many: false });
+        return this.run(query, params, { single: true });
     }
     insert(data) {
         const columns = Object.keys(data).join(", ");
@@ -133,9 +133,8 @@ export class SqliteBruv {
         this._orderBy = undefined;
         this._tableName = undefined;
     }
-    async run(query, params, { single, many } = {
+    async run(query, params, { single } = {
         single: false,
-        many: false,
     }) {
         if (this._D1_api_key) {
             const res = await fetch(this._D1_url, {
@@ -147,16 +146,20 @@ export class SqliteBruv {
                 body: JSON.stringify({ sql: query, params }),
             });
             const data = await res.json();
-            if (data.success) {
-                console.log(JSON.stringify({ data, sql: query, params }, null, 2));
-                return data.result;
+            if (data.success && data.result.success) {
+                if (single) {
+                    return data.result.results[0];
+                }
+                else {
+                    return data.result.results;
+                }
             }
             throw new Error(JSON.stringify(data.errors));
         }
         if (single) {
             return this.db.query(query, params).get();
         }
-        if (many) {
+        if (single === false) {
             return this.db.query(query, params).all();
         }
         return this.db.run(query, params);
