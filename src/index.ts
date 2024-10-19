@@ -145,6 +145,9 @@ export class SqliteBruv<T = Record<string, Params>> {
     return { query, params };
   }
   clear() {
+    if (!this._tableName || typeof this._tableName !== "string") {
+      throw new Error("no table selected!");
+    }
     this._conditions = [];
     this._params = [];
     this._limit = undefined;
