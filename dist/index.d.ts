@@ -31,9 +31,9 @@ export declare class SqliteBruv<T = Record<string, Params>> {
     orderBy(column: string, direction: "ASC" | "DESC"): this;
     get(): Promise<T[]>;
     getOne(): Promise<T>;
-    insert(data: Partial<T>): Promise<T>;
-    update(data: Partial<T>): Promise<T>;
-    delete(): Promise<T>;
+    insert(data: Partial<T>, returning?: boolean): Promise<T>;
+    update(data: Partial<T>, returning?: boolean): Promise<T>;
+    delete(returning?: boolean): Promise<T>;
     private build;
     clear(): void;
     run(query: string, params: (string | number | null | boolean)[], { single }?: {
