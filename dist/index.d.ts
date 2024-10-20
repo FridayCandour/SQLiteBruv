@@ -35,7 +35,7 @@ export declare class SqliteBruv<T = Record<string, Params>> {
     private build;
     clear(): void;
     run(query: string, params: (string | number | null | boolean)[], { single }?: {
-        single: boolean;
+        single?: boolean;
     }): Promise<any>;
 }
 export {};

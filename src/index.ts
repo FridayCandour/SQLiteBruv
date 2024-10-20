@@ -156,8 +156,8 @@ export class SqliteBruv<T = Record<string, Params>> {
   async run(
     query: string,
     params: (string | number | null | boolean)[],
-    { single }: { single: boolean } = {
-      single: false,
+    { single }: { single?: boolean } = {
+      single: undefined,
     }
   ) {
     if (this._D1_api_key) {

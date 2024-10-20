@@ -134,7 +134,7 @@ export class SqliteBruv {
         this._tableName = undefined;
     }
     async run(query, params, { single } = {
-        single: false,
+        single: undefined,
     }) {
         if (this._D1_api_key) {
             const res = await fetch(this._D1_url, {
