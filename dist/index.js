@@ -10,17 +10,22 @@ export class SqliteBruv {
     _query = false;
     _D1_api_key;
     _D1_url;
-    constructor({ db, D1, } = { D1: undefined, db: undefined }) {
+    _logging = false;
+    constructor({ db, D1, logging, } = { D1: undefined, db: undefined }) {
         if (db || D1) {
             this.db = db;
             if (D1) {
                 const { accountId, databaseId, apiKey } = D1;
-                this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+                this._D1_url =
+                    `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
                 this._D1_api_key = apiKey;
             }
         }
         else {
             this._query = true;
+        }
+        if (logging === true) {
+            this._logging = true;
         }
     }
     from(tableName) {
@@ -136,6 +141,9 @@ export class SqliteBruv {
     async run(query, params, { single } = {
         single: undefined,
     }) {
+        if (this._logging) {
+            console.log({ query, params });
+        }
         if (this._D1_api_key) {
             const res = await fetch(this._D1_url, {
                 method: "POST",

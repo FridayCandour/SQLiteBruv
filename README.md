@@ -2,8 +2,8 @@
 
 ### A Simple and Efficient Query Builder for SQLite
 
-Lightweight, modular, and secure SQLite query builder designed to simplify database interactions and optimize performance.
-Key Features:
+Lightweight, modular, and secure SQLite query builder designed to simplify
+database interactions and optimize performance. Key Features:
 
 - Simple Query Building: Construct complex queries with ease.
 - Parameterized Queries: Prevent SQL injection attacks.
@@ -21,8 +21,7 @@ Key Features:
 Install sqlitebruv with npm
 
 ```bash
-  npm install sqlitebruv
-
+npm install sqlitebruv
 ```
 
 ## Usage/Examples
@@ -178,8 +177,7 @@ await queryBuilder
 
 ## Contributing
 
-Contributions are always welcome!
-creates issues and pull requests.
+Contributions are always welcome! creates issues and pull requests.
 
 ## Support
 

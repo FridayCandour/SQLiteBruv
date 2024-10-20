@@ -11,13 +11,15 @@ export declare class SqliteBruv<T = Record<string, Params>> {
     private _query;
     private _D1_api_key?;
     private _D1_url?;
-    constructor({ db, D1, }?: {
+    private _logging;
+    constructor({ db, D1, logging, }?: {
         db?: any;
         D1?: {
             accountId: string;
             databaseId: string;
             apiKey: string;
         };
+        logging?: boolean;
     });
     from<Model extends Record<string, any> = Record<string, any>>(tableName: string): SqliteBruv<Model>;
     select(...columns: string[]): this;

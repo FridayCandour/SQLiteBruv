@@ -12,10 +12,12 @@ export class SqliteBruv<T = Record<string, Params>> {
   private _query: boolean = false;
   private _D1_api_key?: string;
   private _D1_url?: string;
+  private _logging: boolean = false;
   constructor(
     {
       db,
       D1,
+      logging,
     }: {
       db?: any;
       D1?: {
@@ -23,21 +25,26 @@ export class SqliteBruv<T = Record<string, Params>> {
         databaseId: string;
         apiKey: string;
       };
-    } = { D1: undefined, db: undefined }
+      logging?: boolean;
+    } = { D1: undefined, db: undefined },
   ) {
     if (db || D1) {
       this.db = db;
       if (D1) {
         const { accountId, databaseId, apiKey } = D1;
-        this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+        this._D1_url =
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
         this._D1_api_key = apiKey;
       }
     } else {
       this._query = true;
     }
+    if (logging === true) {
+      this._logging = true;
+    }
   }
   from<Model extends Record<string, any> = Record<string, any>>(
-    tableName: string
+    tableName: string,
   ) {
     this._tableName = tableName;
     return this as unknown as SqliteBruv<Model>;
@@ -93,7 +100,8 @@ export class SqliteBruv<T = Record<string, Params>> {
     const placeholders = Object.keys(data)
       .map(() => "?")
       .join(", ");
-    const query = `INSERT INTO ${this._tableName} (${columns}) VALUES (${placeholders})`;
+    const query =
+      `INSERT INTO ${this._tableName} (${columns}) VALUES (${placeholders})`;
     const params = Object.values(data) as Params[];
     this.clear();
     if (this._query) {
@@ -105,9 +113,9 @@ export class SqliteBruv<T = Record<string, Params>> {
     const columns = Object.keys(data)
       .map((column) => `${column} = ?`)
       .join(", ");
-    const query = `UPDATE ${
-      this._tableName
-    } SET ${columns} ${this._conditions.join(" AND ")}`;
+    const query = `UPDATE ${this._tableName} SET ${columns} ${
+      this._conditions.join(" AND ")
+    }`;
     const params = [...(Object.values(data) as Params[]), ...this._params];
     this.clear();
     if (this._query) {
@@ -116,9 +124,11 @@ export class SqliteBruv<T = Record<string, Params>> {
     return this.run(query, params);
   }
   delete(): Promise<T> {
-    const query = `DELETE FROM ${this._tableName} ${this._conditions.join(
-      " AND "
-    )}`;
+    const query = `DELETE FROM ${this._tableName} ${
+      this._conditions.join(
+        " AND ",
+      )
+    }`;
     const params = [...this._params];
     this.clear();
     if (this._query) {
@@ -158,8 +168,11 @@ export class SqliteBruv<T = Record<string, Params>> {
     params: (string | number | null | boolean)[],
     { single }: { single?: boolean } = {
       single: undefined,
-    }
+    },
   ) {
+    if (this._logging) {
+      console.log({ query, params });
+    }
     if (this._D1_api_key) {
       const res = await fetch(this._D1_url as string, {
         method: "POST",
