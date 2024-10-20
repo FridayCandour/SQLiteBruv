@@ -76,12 +76,12 @@ export class SqliteBruv {
         }
         return this.run(query, params, { single: true });
     }
-    insert(data, returning) {
+    insert(data) {
         const columns = Object.keys(data).join(", ");
         const placeholders = Object.keys(data)
             .map(() => "?")
             .join(", ");
-        const query = `INSERT INTO ${this._tableName} (${columns}) VALUES (${placeholders}) ${returning ? "RETURNING *" : ""}`;
+        const query = `INSERT INTO ${this._tableName} (${columns}) VALUES (${placeholders})`;
         const params = Object.values(data);
         this.clear();
         if (this._query) {
@@ -89,11 +89,11 @@ export class SqliteBruv {
         }
         return this.run(query, params);
     }
-    update(data, returning) {
+    update(data) {
         const columns = Object.keys(data)
             .map((column) => `${column} = ?`)
             .join(", ");
-        const query = `UPDATE ${this._tableName} SET ${columns} ${this._conditions.join(" AND ")}  ${returning ? "RETURNING *" : ""}`;
+        const query = `UPDATE ${this._tableName} SET ${columns} ${this._conditions.join(" AND ")}`;
         const params = [...Object.values(data), ...this._params];
         this.clear();
         if (this._query) {
@@ -101,8 +101,8 @@ export class SqliteBruv {
         }
         return this.run(query, params);
     }
-    delete(returning) {
-        const query = `DELETE FROM ${this._tableName} ${this._conditions.join(" AND ")} ${returning ? "RETURNING *" : ""}`;
+    delete() {
+        const query = `DELETE FROM ${this._tableName} ${this._conditions.join(" AND ")}`;
         const params = [...this._params];
         this.clear();
         if (this._query) {
