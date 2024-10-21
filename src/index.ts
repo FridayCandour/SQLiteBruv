@@ -50,7 +50,7 @@ export class SqliteBruv<T = Record<string, Params>> {
   }
   // Read queries
   select(...columns: string[]) {
-    this._columns = columns;
+    this._columns = columns || ["*"];
     return this;
   }
   where(condition: string, ...params: Params[]) {
@@ -189,10 +189,10 @@ export class SqliteBruv<T = Record<string, Params>> {
       throw new Error(JSON.stringify(data.errors));
     }
     if (single) {
-      return this.db.query(query, params).get();
+      return this.db.query(query).get(params);
     }
     if (single === false) {
-      return this.db.query(query, params).all();
+      return this.db.query(query).all(params);
     }
     return this.db.run(query, params);
   }

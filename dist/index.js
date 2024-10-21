@@ -32,7 +32,7 @@ export class SqliteBruv {
         return this;
     }
     select(...columns) {
-        this._columns = columns;
+        this._columns = columns || ["*"];
         return this;
     }
     where(condition, ...params) {
@@ -164,10 +164,10 @@ export class SqliteBruv {
             throw new Error(JSON.stringify(data.errors));
         }
         if (single) {
-            return this.db.query(query, params).get();
+            return this.db.query(query).get(params);
         }
         if (single === false) {
-            return this.db.query(query, params).all();
+            return this.db.query(query).all(params);
         }
         return this.db.run(query, params);
     }
