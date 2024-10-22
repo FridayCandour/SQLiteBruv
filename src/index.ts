@@ -1,6 +1,8 @@
 type Params = string | number | null | boolean;
 
-export class SqliteBruv<T = Record<string, Params>> {
+export class SqliteBruv<
+  T extends Record<string, Params> = Record<string, Params>
+> {
   private db: any;
   private _columns: string[] = ["*"];
   private _conditions: string[] = [];
@@ -73,7 +75,7 @@ export class SqliteBruv<T = Record<string, Params>> {
     return this;
   }
   offset(count: number) {
-    this._offset = count;
+    this._offset = count || -1;
     return this;
   }
   orderBy(column: string, direction: "ASC" | "DESC") {
@@ -94,7 +96,7 @@ export class SqliteBruv<T = Record<string, Params>> {
     }
     return this.run(query, params, { single: true });
   }
-  insert(data: Partial<T>): Promise<T> {
+  insert(data: T): Promise<T> {
     const columns = Object.keys(data).join(", ");
     const placeholders = Object.keys(data)
       .map(() => "?")

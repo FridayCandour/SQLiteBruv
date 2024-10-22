@@ -55,7 +55,7 @@ export class SqliteBruv {
         return this;
     }
     offset(count) {
-        this._offset = count;
+        this._offset = count || -1;
         return this;
     }
     orderBy(column, direction) {

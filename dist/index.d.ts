@@ -1,5 +1,5 @@
 type Params = string | number | null | boolean;
-export declare class SqliteBruv<T = Record<string, Params>> {
+export declare class SqliteBruv<T extends Record<string, Params> = Record<string, Params>> {
     private db;
     private _columns;
     private _conditions;
@@ -31,7 +31,7 @@ export declare class SqliteBruv<T = Record<string, Params>> {
     orderBy(column: string, direction: "ASC" | "DESC"): this;
     get(): Promise<T[]>;
     getOne(): Promise<T>;
-    insert(data: Partial<T>): Promise<T>;
+    insert(data: T): Promise<T>;
     update(data: Partial<T>): Promise<T>;
     delete(): Promise<T>;
     private build;
