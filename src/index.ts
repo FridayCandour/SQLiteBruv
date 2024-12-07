@@ -1,13 +1,25 @@
+// TODOs:
+// [x] batching runner
+// [x] suport turso db https://docs.turso.tech/sdk/http/quickstart https://turso.tech/blog/bring-your-own-sdk-with-tursos-http-api-ff4ccbed
+
 type Params = string | number | null | boolean;
+import { BruvSchema, SchemaColumnOptions } from "./types.js";
+import { readdirSync, readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { Database } from "bun:sqlite";
 
 export class SqliteBruv<
   T extends Record<string, Params> = Record<string, Params>
 > {
-  private db: any;
+  static migrationFolder = "./Bruv-migrations";
+  db: any;
+  dbMem: any;
   private _columns: string[] = ["*"];
   private _conditions: string[] = [];
   private _tableName?: string = undefined;
   private _params: Params[] = [];
+  private _cacheName?: string;
   private _limit?: number;
   private _offset?: number;
   private _orderBy?: { column: string; direction: "ASC" | "DESC" };
@@ -15,34 +27,52 @@ export class SqliteBruv<
   private _D1_api_key?: string;
   private _D1_url?: string;
   private _logging: boolean = false;
-  constructor(
-    {
-      db,
-      D1,
-      logging,
-    }: {
-      db?: any;
-      D1?: {
-        accountId: string;
-        databaseId: string;
-        apiKey: string;
-      };
-      logging?: boolean;
-    } = { D1: undefined, db: undefined }
-  ) {
-    if (db || D1) {
-      this.db = db;
-      if (D1) {
-        const { accountId, databaseId, apiKey } = D1;
-        this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
-        this._D1_api_key = apiKey;
-      }
-    } else {
-      this._query = true;
+  private _hotCache: Record<string | number, any> = {};
+  constructor({
+    D1,
+    logging,
+    schema,
+    name,
+  }: {
+    D1?: {
+      accountId: string;
+      databaseId: string;
+      apiKey: string;
+    };
+    schema: Schema[];
+    logging?: boolean;
+    name?: string;
+  }) {
+    // ?setup db
+    this.db = Database.open((name || "Database") + ".db");
+    this.dbMem = new Database(":memory:");
+    if (D1) {
+      const { accountId, databaseId, apiKey } = D1;
+      this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;
+      this._D1_api_key = apiKey;
     }
+    // ?
     if (logging === true) {
       this._logging = true;
     }
+    // ? get and set db for each schema
+    if (!schema?.length) {
+      throw new Error("Not database schema passed!");
+    } else {
+      schema.forEach((s) => {
+        s.db = this;
+        s.induce();
+      });
+    }
+    //? Auto create migration files
+    Promise.all([getSchema(this.db), getSchema(this.dbMem)])
+      .then(async ([currentSchema, targetSchema]) => {
+        const migration = await generateMigration(currentSchema, targetSchema);
+        await createMigrationFileIfNeeded(migration);
+      })
+      .catch((e) => {
+        console.log(e);
+      });
   }
   from<Model extends Record<string, any> = Record<string, any>>(
     tableName: string
@@ -82,7 +112,17 @@ export class SqliteBruv<
     this._orderBy = { column, direction };
     return this;
   }
+  cacheAs(cacheName: string) {
+    this._cacheName = cacheName;
+    return this;
+  }
+  invalidateCache(cacheName: string) {
+    this._hotCache[cacheName] = undefined;
+    return this;
+  }
   get(): Promise<T[]> {
+    if (this._cacheName && this._hotCache[this._cacheName])
+      this._hotCache[this._cacheName];
     const { query, params } = this.build();
     if (this._query) {
       return { query, params } as unknown as Promise<T[]>;
@@ -90,6 +130,8 @@ export class SqliteBruv<
     return this.run(query, params, { single: false });
   }
   getOne(): Promise<T> {
+    if (this._cacheName && this._hotCache[this._cacheName])
+      this._hotCache[this._cacheName];
     const { query, params } = this.build();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
@@ -161,7 +203,7 @@ export class SqliteBruv<
     this._orderBy = undefined;
     this._tableName = undefined;
   }
-  async run(
+  private async run(
     query: string,
     params: (string | number | null | boolean)[],
     { single }: { single?: boolean } = {
@@ -191,11 +233,201 @@ export class SqliteBruv<
       throw new Error(JSON.stringify(data.errors));
     }
     if (single) {
+      if (this._cacheName) {
+        return this.cacheResponse(this.db.query(query).get(params));
+      }
       return this.db.query(query).get(params);
     }
     if (single === false) {
+      if (this._cacheName) {
+        return this.cacheResponse(this.db.query(query).all(params));
+      }
       return this.db.query(query).all(params);
     }
     return this.db.run(query, params);
   }
+  raw(raw: string, params: (string | number | boolean)[] = []) {
+    return this.run(raw, params, { single: false });
+  }
+  async cacheResponse(response: any) {
+    await response;
+    this._hotCache[this._cacheName!] = response;
+    return response;
+  }
+}
+
+export class Schema<Model extends Record<string, any> = {}> {
+  name: string;
+  db?: SqliteBruv;
+  columns: { [x in keyof Omit<Model, "_id">]: SchemaColumnOptions };
+  constructor(def: BruvSchema<Model>) {
+    this.name = def.name;
+    this.columns = def.columns;
+  }
+  get query() {
+    return this.db?.from(this.name)!;
+  }
+  queryRaw(raw: string) {
+    return this.db?.from(this.name).raw(raw, [])!;
+  }
+  induce() {
+    const tables = Object.keys(this.columns);
+    const query = `CREATE TABLE IF NOT EXISTS ${
+      this.name
+    } (\n    id text PRIMARY KEY NOT NULL,\n     ${tables
+      .map(
+        (col, i) =>
+          col +
+          " " +
+          this.columns[col].type +
+          (this.columns[col].unique ? " UNIQUE" : "") +
+          (this.columns[col].required ? " NOT NULL" : "") +
+          (this.columns[col].default
+            ? "  DEFAULT " + this.columns[col].default()
+            : "") +
+          (i + 1 !== tables.length ? ",\n    " : "\n")
+      )
+      .join(" ")})`;
+    try {
+      this.db?.db.run(query);
+      this.db?.dbMem.run(query);
+    } catch (error) {
+      console.log({ err: String(error), query });
+    }
+  }
+}
+
+async function getSchema(db: any) {
+  try {
+    const tables = await db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all();
+    const schema = await Promise.all(
+      tables.map(async (table: any) => ({
+        name: table.name,
+        schema: await db
+          .prepare(
+            `SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`
+          )
+          .get(table.name),
+      }))
+    );
+    db.close(); // Close connection
+    return schema;
+  } catch (error) {
+    console.error(error);
+    return null;
+  }
+}
+
+async function generateMigration(currentSchema: any, targetSchema: any) {
+  let up = "";
+  let down = "";
+
+  const currentTables = Object.fromEntries(
+    currentSchema.map(({ name, schema }: any) => [name, schema.sql])
+  );
+  const targetTables = Object.fromEntries(
+    targetSchema.map(({ name, schema }: any) => [name, schema.sql])
+  );
+
+  interface ColumnDetails {
+    [x: string]: { type: string; constraints: string };
+  }
+  [];
+  // Utility to parse table structures (naive example; improve as needed)
+  function parseSchema(sql: string): ColumnDetails {
+    // Improved regex to match column definitions
+    const columnRegex =
+      /(?<column_name>\w+)\s+(?<data_type>\w+)(?:\s+(?<constraints>(?:PRIMARY KEY|UNIQUE|NOT NULL|DEFAULT\s+[^,]+|CHECK\s*\(.+?\)|COLLATE\s+\w+|\s+)+))?(?:,|$)/gi;
+    // Extract the content within the parentheses
+    const columnSectionMatch = sql.match(/\(([\s\S]+)\)/);
+    if (!columnSectionMatch) {
+      return {};
+    }
+    const columnSection = columnSectionMatch[1];
+    const matches: any = columnSection.matchAll(columnRegex);
+    const columns: ColumnDetails = {};
+    for (const match of matches) {
+      const columnName = match.groups?.column_name || "";
+      const dataType = match.groups?.data_type || "";
+      const rawConstraints = match.groups?.constraints || "";
+      const constraints = rawConstraints
+        .split(/(?=PRIMARY KEY|UNIQUE|NOT NULL|DEFAULT|CHECK|COLLATE)/)
+        .map((constraint: string) => constraint.trim())
+        .filter((constraint: string[]) => constraint.length > 0)
+        .join(" ");
+      columns[columnName] = { type: dataType, constraints };
+    }
+    return columns;
+  }
+
+  // Compare schemas and generate migration steps
+  for (const [tableName, currentSql] of Object.entries(currentTables)) {
+    if (!targetTables[tableName]) {
+      up += `DROP TABLE ${tableName};\n`;
+      down += `CREATE TABLE ${tableName} (${currentSql});\n`;
+      continue;
+    }
+
+    const currentColumns = parseSchema(currentSql);
+    const targetColumns = parseSchema(targetTables[tableName]);
+
+    // Compare columns
+    for (const [colName, col] of Object.entries(currentColumns)) {
+      if (!targetColumns[colName]?.type) {
+        up += `ALTER TABLE ${tableName} DROP COLUMN ${colName};\n`;
+        down += `ALTER TABLE ${tableName} ADD COLUMN ${colName} ${col.type}  ${col.constraints};\n`;
+      } else if (targetColumns[colName].type !== col.type) {
+        up += `ALTER TABLE ${tableName} ALTER COLUMN ${colName} TYPE ${targetColumns[colName].type}  ${targetColumns[colName].constraints};\n`;
+        down += `ALTER TABLE ${tableName} ALTER COLUMN ${colName} TYPE ${col.type}  ${col.constraints};\n`;
+      }
+    }
+
+    for (const [colName, col] of Object.entries(targetColumns)) {
+      if (!currentColumns[colName]?.type) {
+        up += `ALTER TABLE ${tableName} ADD COLUMN ${colName} ${col.type} ${col.constraints};\n`;
+        down += `ALTER TABLE ${tableName} DROP COLUMN ${colName};\n`;
+      }
+    }
+  }
+
+  for (const [tableName, targetSql] of Object.entries(targetTables)) {
+    if (!currentTables[tableName]) {
+      up += `CREATE TABLE ${tableName} (${targetSql});\n`;
+      down += `DROP TABLE ${tableName};\n`;
+    }
+  }
+
+  return { up, down };
+}
+
+async function createMigrationFileIfNeeded(
+  migration: { up: string; down: string } | null
+) {
+  if (!migration?.up) return;
+  const timestamp = new Date().toString().split(" ").slice(0, 5).join("_");
+  const filename = `${timestamp}_auto_migration.sql`;
+  const filepath = join(SqliteBruv.migrationFolder, filename);
+  const fileContent = `-- Up\n\n${migration.up}\n\n-- Down\n\n${migration.down}`;
+  try {
+    await mkdir(SqliteBruv.migrationFolder, { recursive: true });
+    if (isDuplicateMigration(fileContent)) return;
+    await writeFile(filepath, fileContent);
+    console.log(`Created migration file: ${filename}`);
+  } catch (error) {
+    console.error("Error during file system operations: ", error);
+  }
+}
+
+function isDuplicateMigration(newContent: string) {
+  const migrationFiles = readdirSync(SqliteBruv.migrationFolder);
+  for (const file of migrationFiles) {
+    const filePath = join(SqliteBruv.migrationFolder, file);
+    const existingContent = readFileSync(filePath, "utf8");
+    if (existingContent.trim() === newContent.trim()) {
+      return true;
+    }
+  }
+  return false;
 }

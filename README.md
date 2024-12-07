@@ -1,16 +1,15 @@
 # SqliteBruv
 
-### A Simple and Efficient Query Builder for SQLite
+### A Fast and Easy Query Builder for Cloudflare's D1
 
-Lightweight, modular, and secure SQLite query builder designed to simplify
+Lightweight, SQLite query builder designed to simplify
 database interactions and optimize performance. Key Features:
 
-- Simple Query Building: Construct complex queries with ease.
-- Parameterized Queries: Prevent SQL injection attacks.
 - Works with cloudflare D1.
 - Works with bun's Inbuilt SQLite.
+- Simple Query Building: Construct queries with ease.
+- Parameterized Queries: Prevent SQL injection attacks.
 - Provides raw query.
-- Zero Deps
 
 <center>
 <img src="https://github.com/FridayCandour/SQLiteBruv/blob/main/icon.png?raw=true" style="width: 320px; margin: auto;" />
@@ -81,7 +80,6 @@ await queryBuilder
 // Delete
 await queryBuilder
   .from("users")
-  .select("*")
   .where("id = ?", 1)
   .delete()
   .then((changes) => {
