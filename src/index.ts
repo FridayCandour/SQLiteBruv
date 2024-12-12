@@ -63,7 +63,10 @@ export class SqliteBruv<
     name?: string;
   }) {
     // ?setup db
-    this.db = new Database((name || "Database") + ".db", { create: true });
+    this.db = new Database((name || "Database") + ".sqlite", {
+      create: true,
+      strict: true,
+    });
     this.dbMem = new Database();
     if (D1) {
       const { accountId, databaseId, apiKey } = D1;
