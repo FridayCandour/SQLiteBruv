@@ -1,13 +1,32 @@
 // TODOs:
 // [x] batching runner
-// [x] suport turso db https://docs.turso.tech/sdk/http/quickstart https://turso.tech/blog/bring-your-own-sdk-with-tursos-http-api-ff4ccbed
+// [x] support turso db https://docs.turso.tech/sdk/http/quickstart https://turso.tech/blog/bring-your-own-sdk-with-tursos-http-api-ff4ccbed
 
 type Params = string | number | null | boolean;
-import { BruvSchema, SchemaColumnOptions } from "./types.js";
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+
+// TYPE:
+
+export interface BruvSchema<Model> {
+  name: string;
+  columns: {
+    [x in keyof Omit<Model, "_id">]: SchemaColumnOptions;
+  };
+}
+
+interface SchemaColumnOptions {
+  type: "INTEGER" | "REAL" | "TEXT" | "DATETIME";
+  required?: boolean;
+  unique?: boolean;
+  default?: () => any;
+  target?: string;
+  relationType?: "MANY" | "ONE";
+}
+
+// SqliteBruv class
 
 export class SqliteBruv<
   T extends Record<string, Params> = Record<string, Params>
