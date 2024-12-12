@@ -20,8 +20,8 @@ export class SqliteBruv {
     _logging = false;
     _hotCache = {};
     constructor({ D1, logging, schema, name, }) {
-        this.db = Database.open((name || "Database") + ".db");
-        this.dbMem = new Database(":memory:");
+        this.db = new Database((name || "Database") + ".db", { create: true });
+        this.dbMem = new Database();
         if (D1) {
             const { accountId, databaseId, apiKey } = D1;
             this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;

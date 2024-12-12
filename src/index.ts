@@ -2,7 +2,6 @@
 // [x] batching runner
 // [x] support turso db https://docs.turso.tech/sdk/http/quickstart https://turso.tech/blog/bring-your-own-sdk-with-tursos-http-api-ff4ccbed
 
-type Params = string | number | null | boolean;
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -25,6 +24,7 @@ interface SchemaColumnOptions {
   target?: string;
   relationType?: "MANY" | "ONE";
 }
+type Params = string | number | null | boolean;
 
 // SqliteBruv class
 
@@ -63,8 +63,8 @@ export class SqliteBruv<
     name?: string;
   }) {
     // ?setup db
-    this.db = Database.open((name || "Database") + ".db");
-    this.dbMem = new Database(":memory:");
+    this.db = new Database((name || "Database") + ".db", { create: true });
+    this.dbMem = new Database();
     if (D1) {
       const { accountId, databaseId, apiKey } = D1;
       this._D1_url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`;

@@ -25,4 +25,5 @@ const user = new Schema<{
 
 // db.run(user.toString());
 new SqliteBruv({ schema: [user] });
-user.query.select("*").get();
+const a = await user.query.select("*").get();
+console.log(a);

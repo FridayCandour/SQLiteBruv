@@ -1,4 +1,3 @@
-type Params = string | number | null | boolean;
 export interface BruvSchema<Model> {
     name: string;
     columns: {
@@ -13,6 +12,7 @@ interface SchemaColumnOptions {
     target?: string;
     relationType?: "MANY" | "ONE";
 }
+type Params = string | number | null | boolean;
 export declare class SqliteBruv<T extends Record<string, Params> = Record<string, Params>> {
     static migrationFolder: string;
     db: any;
