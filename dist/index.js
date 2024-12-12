@@ -44,8 +44,9 @@ export class SqliteBruv {
         }
         Promise.all([getSchema(this.db), getSchema(this.dbMem)])
             .then(async ([currentSchema, targetSchema]) => {
-            const migration = await generateMigration(currentSchema, targetSchema);
+            const migration = await generateMigration(currentSchema || [], targetSchema || []);
             await createMigrationFileIfNeeded(migration);
+            this.dbMem.close();
         })
             .catch((e) => {
             console.log(e);
@@ -269,15 +270,16 @@ async function getSchema(db) {
                 .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`)
                 .get(table.name),
         })));
-        db.close();
         return schema;
     }
     catch (error) {
         console.error(error);
-        return null;
+        db.close();
     }
 }
 async function generateMigration(currentSchema, targetSchema) {
+    if (!targetSchema?.length)
+        return { up: "", down: "" };
     let up = "";
     let down = "";
     const currentTables = Object.fromEntries(currentSchema.map(({ name, schema }) => [name, schema.sql]));
@@ -305,14 +307,14 @@ async function generateMigration(currentSchema, targetSchema) {
         }
         return columns;
     }
-    for (const [tableName, currentSql] of Object.entries(currentTables)) {
-        if (!targetTables[tableName]) {
+    for (const [tableName, currentSql] of currentTables) {
+        if (!targetTables.some((ent) => ent[0] === tableName)) {
             up += `DROP TABLE ${tableName};\n`;
             down += `CREATE TABLE ${tableName} (${currentSql});\n`;
             continue;
         }
         const currentColumns = parseSchema(currentSql);
-        const targetColumns = parseSchema(targetTables[tableName]);
+        const targetColumns = parseSchema(targetTables.find((ent) => ent[0] === tableName)?.[1]);
         for (const [colName, col] of Object.entries(currentColumns)) {
             if (!targetColumns[colName]?.type) {
                 up += `ALTER TABLE ${tableName} DROP COLUMN ${colName};\n`;
@@ -331,7 +333,7 @@ async function generateMigration(currentSchema, targetSchema) {
         }
     }
     for (const [tableName, targetSql] of Object.entries(targetTables)) {
-        if (!currentTables[tableName]) {
+        if (!currentTables.some((ent) => ent[0] === tableName)) {
             up += `CREATE TABLE ${tableName} (${targetSql});\n`;
             down += `DROP TABLE ${tableName};\n`;
         }

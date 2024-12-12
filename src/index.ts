@@ -25,6 +25,7 @@ interface SchemaColumnOptions {
   relationType?: "MANY" | "ONE";
 }
 type Params = string | number | null | boolean;
+type rawSchema = { name: string; schema: { sql: string } };
 
 // SqliteBruv class
 
@@ -89,8 +90,12 @@ export class SqliteBruv<
     //? Auto create migration files
     Promise.all([getSchema(this.db), getSchema(this.dbMem)])
       .then(async ([currentSchema, targetSchema]) => {
-        const migration = await generateMigration(currentSchema, targetSchema);
+        const migration = await generateMigration(
+          currentSchema || [],
+          targetSchema || []
+        );
         await createMigrationFileIfNeeded(migration);
+        this.dbMem.close();
       })
       .catch((e) => {
         console.log(e);
@@ -319,7 +324,7 @@ export class Schema<Model extends Record<string, any> = {}> {
   }
 }
 
-async function getSchema(db: any) {
+async function getSchema(db: any): Promise<rawSchema[] | void> {
   try {
     const tables = await db
       .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -334,22 +339,25 @@ async function getSchema(db: any) {
           .get(table.name),
       }))
     );
-    db.close(); // Close connection
     return schema;
   } catch (error) {
     console.error(error);
-    return null;
+    db.close(); // Close connection
   }
 }
 
-async function generateMigration(currentSchema: any, targetSchema: any) {
+async function generateMigration(
+  currentSchema: rawSchema[],
+  targetSchema: rawSchema[]
+) {
+  if (!targetSchema?.length) return { up: "", down: "" };
   let up = "";
   let down = "";
 
-  const currentTables = Object.fromEntries(
+  const currentTables: [string, string][] = Object.fromEntries(
     currentSchema.map(({ name, schema }: any) => [name, schema.sql])
   );
-  const targetTables = Object.fromEntries(
+  const targetTables: [string, string][] = Object.fromEntries(
     targetSchema.map(({ name, schema }: any) => [name, schema.sql])
   );
 
@@ -385,15 +393,17 @@ async function generateMigration(currentSchema: any, targetSchema: any) {
   }
 
   // Compare schemas and generate migration steps
-  for (const [tableName, currentSql] of Object.entries(currentTables)) {
-    if (!targetTables[tableName]) {
+  for (const [tableName, currentSql] of currentTables) {
+    if (!targetTables.some((ent) => ent[0] === tableName)) {
       up += `DROP TABLE ${tableName};\n`;
       down += `CREATE TABLE ${tableName} (${currentSql});\n`;
       continue;
     }
 
     const currentColumns = parseSchema(currentSql);
-    const targetColumns = parseSchema(targetTables[tableName]);
+    const targetColumns = parseSchema(
+      targetTables.find((ent) => ent[0] === tableName)?.[1]!
+    );
 
     // Compare columns
     for (const [colName, col] of Object.entries(currentColumns)) {
@@ -415,7 +425,7 @@ async function generateMigration(currentSchema: any, targetSchema: any) {
   }
 
   for (const [tableName, targetSql] of Object.entries(targetTables)) {
-    if (!currentTables[tableName]) {
+    if (!currentTables.some((ent) => ent[0] === tableName)) {
       up += `CREATE TABLE ${tableName} (${targetSql});\n`;
       down += `DROP TABLE ${tableName};\n`;
     }
