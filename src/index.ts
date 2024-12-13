@@ -346,6 +346,11 @@ async function getSchema(db: any): Promise<rawSchema[] | void> {
   }
 }
 
+interface ColumnDetails {
+  [x: string]: { type: string; constraints: string };
+}
+[];
+
 async function generateMigration(
   currentSchema: rawSchema[],
   targetSchema: rawSchema[]
@@ -354,17 +359,14 @@ async function generateMigration(
   let up = "";
   let down = "";
 
-  const currentTables: [string, string][] = Object.fromEntries(
+  const currentTables: Record<string, string> = Object.fromEntries(
     currentSchema.map(({ name, schema }: any) => [name, schema.sql])
   );
-  const targetTables: [string, string][] = Object.fromEntries(
+
+  const targetTables: Record<string, string> = Object.fromEntries(
     targetSchema.map(({ name, schema }: any) => [name, schema.sql])
   );
 
-  interface ColumnDetails {
-    [x: string]: { type: string; constraints: string };
-  }
-  [];
   // Utility to parse table structures (naive example; improve as needed)
   function parseSchema(sql: string): ColumnDetails {
     // Improved regex to match column definitions
@@ -393,17 +395,15 @@ async function generateMigration(
   }
 
   // Compare schemas and generate migration steps
-  for (const [tableName, currentSql] of currentTables) {
-    if (!targetTables.some((ent) => ent[0] === tableName)) {
+  for (const [tableName, currentSql] of Object.entries(currentTables)) {
+    if (!targetTables[tableName]) {
       up += `DROP TABLE ${tableName};\n`;
       down += `CREATE TABLE ${tableName} (${currentSql});\n`;
       continue;
     }
 
     const currentColumns = parseSchema(currentSql);
-    const targetColumns = parseSchema(
-      targetTables.find((ent) => ent[0] === tableName)?.[1]!
-    );
+    const targetColumns = parseSchema(targetTables[tableName]);
 
     // Compare columns
     for (const [colName, col] of Object.entries(currentColumns)) {
@@ -425,7 +425,7 @@ async function generateMigration(
   }
 
   for (const [tableName, targetSql] of Object.entries(targetTables)) {
-    if (!currentTables.some((ent) => ent[0] === tableName)) {
+    if (!currentTables[tableName]) {
       up += `CREATE TABLE ${tableName} (${targetSql});\n`;
       down += `DROP TABLE ${tableName};\n`;
     }
