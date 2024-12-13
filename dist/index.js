@@ -277,6 +277,7 @@ async function getSchema(db) {
         db.close();
     }
 }
+[];
 async function generateMigration(currentSchema, targetSchema) {
     if (!targetSchema?.length)
         return { up: "", down: "" };
@@ -284,7 +285,6 @@ async function generateMigration(currentSchema, targetSchema) {
     let down = "";
     const currentTables = Object.fromEntries(currentSchema.map(({ name, schema }) => [name, schema.sql]));
     const targetTables = Object.fromEntries(targetSchema.map(({ name, schema }) => [name, schema.sql]));
-    [];
     function parseSchema(sql) {
         const columnRegex = /(?<column_name>\w+)\s+(?<data_type>\w+)(?:\s+(?<constraints>(?:PRIMARY KEY|UNIQUE|NOT NULL|DEFAULT\s+[^,]+|CHECK\s*\(.+?\)|COLLATE\s+\w+|\s+)+))?(?:,|$)/gi;
         const columnSectionMatch = sql.match(/\(([\s\S]+)\)/);
@@ -307,14 +307,14 @@ async function generateMigration(currentSchema, targetSchema) {
         }
         return columns;
     }
-    for (const [tableName, currentSql] of currentTables) {
-        if (!targetTables.some((ent) => ent[0] === tableName)) {
+    for (const [tableName, currentSql] of Object.entries(currentTables)) {
+        if (!targetTables[tableName]) {
             up += `DROP TABLE ${tableName};\n`;
             down += `CREATE TABLE ${tableName} (${currentSql});\n`;
             continue;
         }
         const currentColumns = parseSchema(currentSql);
-        const targetColumns = parseSchema(targetTables.find((ent) => ent[0] === tableName)?.[1]);
+        const targetColumns = parseSchema(targetTables[tableName]);
         for (const [colName, col] of Object.entries(currentColumns)) {
             if (!targetColumns[colName]?.type) {
                 up += `ALTER TABLE ${tableName} DROP COLUMN ${colName};\n`;
@@ -333,7 +333,7 @@ async function generateMigration(currentSchema, targetSchema) {
         }
     }
     for (const [tableName, targetSql] of Object.entries(targetTables)) {
-        if (!currentTables.some((ent) => ent[0] === tableName)) {
+        if (!currentTables[tableName]) {
             up += `CREATE TABLE ${tableName} (${targetSql});\n`;
             down += `DROP TABLE ${tableName};\n`;
         }
