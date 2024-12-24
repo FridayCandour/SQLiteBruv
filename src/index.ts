@@ -1,13 +1,13 @@
 // TODOs:
-// [x] batching runner
 // [x] support turso db https://docs.turso.tech/sdk/http/quickstart https://turso.tech/blog/bring-your-own-sdk-with-tursos-http-api-ff4ccbed
 
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { Database } from "bun:sqlite";
 
-// TYPE:
+// TYPES:
 
 export interface BruvSchema<Model> {
   name: string;
@@ -26,6 +26,40 @@ interface SchemaColumnOptions {
 }
 type Params = string | number | null | boolean;
 type rawSchema = { name: string; schema: { sql: string } };
+interface Query {
+  from: string;
+  select?: string[];
+  where?: {
+    condition: string;
+    params: any[];
+  }[];
+  andWhere?: {
+    condition: string;
+    params: any[];
+  }[];
+  orWhere?: {
+    condition: string;
+    params: any[];
+  }[];
+  orderBy?: {
+    column: string;
+    direction: "ASC" | "DESC";
+  };
+  limit?: number;
+  offset?: number;
+  cacheAs?: string;
+  invalidateCache?: string;
+  action?: "get" | "getOne" | "insert" | "update" | "delete" | "count";
+  /**
+  ### For insert and update only
+  */
+  data?: any;
+}
+
+interface TursoConfig {
+  url: string;
+  authToken: string;
+}
 
 // SqliteBruv class
 
@@ -48,8 +82,33 @@ export class SqliteBruv<
   private _D1_url?: string;
   private _logging: boolean = false;
   private _hotCache: Record<string | number, any> = {};
+  private _turso?: TursoConfig;
+  private readonly MAX_PARAMS = 100;
+  private readonly ALLOWED_OPERATORS = [
+    "=",
+    ">",
+    "<",
+    ">=",
+    "<=",
+    "LIKE",
+    "IN",
+    "BETWEEN",
+    "IS NULL",
+    "IS NOT NULL",
+  ];
+  private readonly DANGEROUS_PATTERNS = [
+    /;\s*$/,
+    /UNION/i,
+    /DROP/i,
+    /DELETE/i,
+    /UPDATE/i,
+    /INSERT/i,
+    /ALTER/i,
+    /EXEC/i,
+  ];
   constructor({
     D1,
+    turso,
     logging,
     schema,
     name,
@@ -59,6 +118,7 @@ export class SqliteBruv<
       databaseId: string;
       apiKey: string;
     };
+    turso?: TursoConfig;
     schema: Schema[];
     logging?: boolean;
     name?: string;
@@ -84,7 +144,7 @@ export class SqliteBruv<
     } else {
       schema.forEach((s) => {
         s.db = this;
-        s.induce();
+        s._induce();
       });
     }
     //? Auto create migration files
@@ -100,6 +160,9 @@ export class SqliteBruv<
       .catch((e) => {
         console.log(e);
       });
+    if (turso) {
+      this._turso = turso;
+    }
   }
   from<Model extends Record<string, any> = Record<string, any>>(
     tableName: string
@@ -112,17 +175,70 @@ export class SqliteBruv<
     this._columns = columns || ["*"];
     return this;
   }
+  private validateCondition(condition: string): boolean {
+    // Check for dangerous patterns
+    if (this.DANGEROUS_PATTERNS.some((pattern) => pattern.test(condition))) {
+      throw new Error("Invalid condition pattern detected");
+    }
+
+    // Validate operators
+    const hasValidOperator = this.ALLOWED_OPERATORS.some((op) =>
+      condition.toUpperCase().includes(op)
+    );
+    if (!hasValidOperator) {
+      throw new Error("Invalid or missing operator in condition");
+    }
+
+    return true;
+  }
+
+  private validateParams(params: Params[]): boolean {
+    if (params.length > this.MAX_PARAMS) {
+      throw new Error("Too many parameters");
+    }
+
+    for (const param of params) {
+      if (
+        param !== null &&
+        !["string", "number", "boolean"].includes(typeof param)
+      ) {
+        throw new Error("Invalid parameter type");
+      }
+
+      if (typeof param === "string" && param.length > 1000) {
+        throw new Error("Parameter string too long");
+      }
+    }
+
+    return true;
+  }
   where(condition: string, ...params: Params[]) {
+    // Validate inputs
+    if (!condition || typeof condition !== "string") {
+      throw new Error("Condition must be a non-empty string");
+    }
+
+    this.validateCondition(condition);
+    this.validateParams(params);
+
+    // Use parameterized query
     this._conditions.push(`WHERE ${condition}`);
     this._params.push(...params);
+
     return this;
   }
   andWhere(condition: string, ...params: Params[]) {
+    this.validateCondition(condition);
+    this.validateParams(params);
+
     this._conditions.push(`AND ${condition}`);
     this._params.push(...params);
     return this;
   }
   orWhere(condition: string, ...params: Params[]) {
+    this.validateCondition(condition);
+    this.validateParams(params);
+
     this._conditions.push(`OR ${condition}`);
     this._params.push(...params);
     return this;
@@ -148,8 +264,9 @@ export class SqliteBruv<
     return this;
   }
   get(): Promise<T[]> {
-    if (this._cacheName && this._hotCache[this._cacheName])
+    if (this._cacheName && this._hotCache[this._cacheName]) {
       this._hotCache[this._cacheName];
+    }
     const { query, params } = this.build();
     if (this._query) {
       return { query, params } as unknown as Promise<T[]>;
@@ -157,8 +274,9 @@ export class SqliteBruv<
     return this.run(query, params, { single: false });
   }
   getOne(): Promise<T> {
-    if (this._cacheName && this._hotCache[this._cacheName])
+    if (this._cacheName && this._hotCache[this._cacheName]) {
       this._hotCache[this._cacheName];
+    }
     const { query, params } = this.build();
     if (this._query) {
       return { query, params } as unknown as Promise<T>;
@@ -166,6 +284,8 @@ export class SqliteBruv<
     return this.run(query, params, { single: true });
   }
   insert(data: T): Promise<T> {
+    //  @ts-ignore
+    data.id = Id();
     const columns = Object.keys(data).join(", ");
     const placeholders = Object.keys(data)
       .map(() => "?")
@@ -203,6 +323,118 @@ export class SqliteBruv<
     }
     return this.run(query, params);
   }
+  count(): Promise<{
+    count: number;
+  }> {
+    const query = `SELECT COUNT(*) as count  FROM ${
+      this._tableName
+    } ${this._conditions.join(" AND ")}`;
+    const params = [...this._params];
+    this.clear();
+    if (this._query) {
+      return { query, params } as unknown as Promise<{
+        count: number;
+      }>;
+    }
+    return this.run(query, params);
+  }
+
+  // Parser function
+  async executeJsonQuery(query: Query): Promise<any> {
+    if (!query.action) {
+      throw new Error("Action is required.");
+    }
+    if (!query.from) {
+      throw new Error("Table is required.");
+    }
+    let queryBuilder = this.from(query.from);
+    if (query.select) queryBuilder = queryBuilder.select(...query.select);
+    if (query.limit) queryBuilder = queryBuilder.limit(query.limit);
+    if (query.offset) queryBuilder = queryBuilder.offset(query.offset);
+    if (query.cacheAs) queryBuilder = queryBuilder.cacheAs(query.cacheAs);
+    if (query.where) {
+      for (const condition of query.where) {
+        queryBuilder = queryBuilder.where(
+          condition.condition,
+          ...condition.params
+        );
+      }
+    }
+
+    if (query.andWhere) {
+      for (const condition of query.andWhere) {
+        queryBuilder = queryBuilder.andWhere(
+          condition.condition,
+          ...condition.params
+        );
+      }
+    }
+
+    if (query.orWhere) {
+      for (const condition of query.orWhere) {
+        queryBuilder = queryBuilder.orWhere(
+          condition.condition,
+          ...condition.params
+        );
+      }
+    }
+
+    if (query.orderBy) {
+      queryBuilder = queryBuilder.orderBy(
+        query.orderBy.column,
+        query.orderBy.direction
+      );
+    }
+
+    let result: any;
+
+    try {
+      switch (query.action) {
+        case "get":
+          result = await queryBuilder.get();
+          break;
+        case "count":
+          result = await queryBuilder.count();
+          break;
+        case "getOne":
+          result = await queryBuilder.getOne();
+          break;
+        case "insert":
+          if (!query.data) {
+            throw new Error("Data is required for insert action.");
+          }
+          result = await queryBuilder.insert(query.data);
+          break;
+        case "update":
+          if (!query.data || !query.from || !query.where) {
+            throw new Error(
+              "Data, from, and where are required for update action."
+            );
+          }
+          result = await queryBuilder.update(query.data);
+          break;
+        case "delete":
+          if (!query.from || !query.where) {
+            throw new Error("From and where are required for delete action.");
+          }
+          result = await queryBuilder.delete();
+          break;
+        default:
+          throw new Error("Invalid action specified.");
+      }
+
+      if (query.invalidateCache) {
+        queryBuilder.invalidateCache(query.invalidateCache);
+      }
+    } catch (error) {
+      // Handle errors and return appropriate response
+      console.error("Query execution failed:", error);
+      throw new Error("Query execution failed.");
+    }
+
+    return result;
+  }
+
   private build() {
     const query = [
       `SELECT ${this._columns.join(", ")} FROM ${this._tableName}`,
@@ -240,6 +472,13 @@ export class SqliteBruv<
     if (this._logging) {
       console.log({ query, params });
     }
+    if (this._turso) {
+      const results = await this.executeTursoQuery(query, params);
+      if (single) {
+        return results[0];
+      }
+      return results;
+    }
     if (this._D1_api_key) {
       const res = await fetch(this._D1_url as string, {
         method: "POST",
@@ -273,6 +512,51 @@ export class SqliteBruv<
     }
     return this.db.run(query, params);
   }
+  private async executeTursoQuery(
+    query: string,
+    params: any[] = []
+  ): Promise<any> {
+    if (!this._turso) {
+      throw new Error("Turso configuration not found");
+    }
+
+    const response = await fetch(this._turso.url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this._turso.authToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        statements: [
+          {
+            q: query,
+            params: params,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Turso API error: ${response.statusText}`);
+    }
+
+    const results = (await response.json())[0];
+    const { columns, rows } = results?.results || {};
+    if (results.error) {
+      throw new Error(`Turso API error: ${results.error}`);
+    }
+
+    // Map each row to an object
+    const transformedRows = rows.map((row: any[]) => {
+      const rowObject: any = {};
+      columns.forEach((column: string, index: number) => {
+        rowObject[column] = row[index];
+      });
+      return rowObject;
+    });
+
+    return transformedRows;
+  }
   raw(raw: string, params: (string | number | boolean)[] = []) {
     return this.run(raw, params, { single: false });
   }
@@ -284,6 +568,7 @@ export class SqliteBruv<
 }
 
 export class Schema<Model extends Record<string, any> = {}> {
+  private string: string = "";
   name: string;
   db?: SqliteBruv;
   columns: { [x in keyof Omit<Model, "_id">]: SchemaColumnOptions };
@@ -297,9 +582,9 @@ export class Schema<Model extends Record<string, any> = {}> {
   queryRaw(raw: string) {
     return this.db?.from(this.name).raw(raw, [])!;
   }
-  induce() {
+  _induce() {
     const tables = Object.keys(this.columns);
-    const query = `CREATE TABLE IF NOT EXISTS ${
+    this.string = `CREATE TABLE IF NOT EXISTS ${
       this.name
     } (\n    id text PRIMARY KEY NOT NULL,\n     ${tables
       .map(
@@ -316,11 +601,14 @@ export class Schema<Model extends Record<string, any> = {}> {
       )
       .join(" ")})`;
     try {
-      this.db?.db.run(query);
-      this.db?.dbMem.run(query);
+      this.db?.db.run(this.string);
+      this.db?.dbMem.run(this.string);
     } catch (error) {
-      console.log({ err: String(error), query });
+      console.log({ err: String(error), schema: this.string });
     }
+  }
+  toString() {
+    return this.string;
   }
 }
 
@@ -463,3 +751,28 @@ function isDuplicateMigration(newContent: string) {
   }
   return false;
 }
+
+const PROCESS_UNIQUE = randomBytes(5);
+// @ts-expect-error
+const buffer = Buffer.alloc(12);
+export const Id = (): string => {
+  let index = ~~(Math.random() * 0xffffff);
+  const time = ~~(Date.now() / 1000);
+  const inc = (index = (index + 1) % 0xffffff);
+  // 4-byte timestamp
+  buffer[3] = time & 0xff;
+  buffer[2] = (time >> 8) & 0xff;
+  buffer[1] = (time >> 16) & 0xff;
+  buffer[0] = (time >> 24) & 0xff;
+  // 5-byte process unique
+  buffer[4] = PROCESS_UNIQUE[0];
+  buffer[5] = PROCESS_UNIQUE[1];
+  buffer[6] = PROCESS_UNIQUE[2];
+  buffer[7] = PROCESS_UNIQUE[3];
+  buffer[8] = PROCESS_UNIQUE[4];
+  // 3-byte counter
+  buffer[11] = inc & 0xff;
+  buffer[10] = (inc >> 8) & 0xff;
+  buffer[9] = (inc >> 16) & 0xff;
+  return buffer.toString("hex");
+};

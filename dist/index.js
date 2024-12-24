@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { Database } from "bun:sqlite";
 export class SqliteBruv {
     static migrationFolder = "./Bruv-migrations";
@@ -19,7 +20,31 @@ export class SqliteBruv {
     _D1_url;
     _logging = false;
     _hotCache = {};
-    constructor({ D1, logging, schema, name, }) {
+    _turso;
+    MAX_PARAMS = 100;
+    ALLOWED_OPERATORS = [
+        "=",
+        ">",
+        "<",
+        ">=",
+        "<=",
+        "LIKE",
+        "IN",
+        "BETWEEN",
+        "IS NULL",
+        "IS NOT NULL",
+    ];
+    DANGEROUS_PATTERNS = [
+        /;\s*$/,
+        /UNION/i,
+        /DROP/i,
+        /DELETE/i,
+        /UPDATE/i,
+        /INSERT/i,
+        /ALTER/i,
+        /EXEC/i,
+    ];
+    constructor({ D1, turso, logging, schema, name, }) {
         this.db = new Database((name || "Database") + ".sqlite", {
             create: true,
             strict: true,
@@ -39,7 +64,7 @@ export class SqliteBruv {
         else {
             schema.forEach((s) => {
                 s.db = this;
-                s.induce();
+                s._induce();
             });
         }
         Promise.all([getSchema(this.db), getSchema(this.dbMem)])
@@ -51,6 +76,9 @@ export class SqliteBruv {
             .catch((e) => {
             console.log(e);
         });
+        if (turso) {
+            this._turso = turso;
+        }
     }
     from(tableName) {
         this._tableName = tableName;
@@ -60,17 +88,51 @@ export class SqliteBruv {
         this._columns = columns || ["*"];
         return this;
     }
+    validateCondition(condition) {
+        if (this.DANGEROUS_PATTERNS.some((pattern) => pattern.test(condition))) {
+            throw new Error("Invalid condition pattern detected");
+        }
+        const hasValidOperator = this.ALLOWED_OPERATORS.some((op) => condition.toUpperCase().includes(op));
+        if (!hasValidOperator) {
+            throw new Error("Invalid or missing operator in condition");
+        }
+        return true;
+    }
+    validateParams(params) {
+        if (params.length > this.MAX_PARAMS) {
+            throw new Error("Too many parameters");
+        }
+        for (const param of params) {
+            if (param !== null &&
+                !["string", "number", "boolean"].includes(typeof param)) {
+                throw new Error("Invalid parameter type");
+            }
+            if (typeof param === "string" && param.length > 1000) {
+                throw new Error("Parameter string too long");
+            }
+        }
+        return true;
+    }
     where(condition, ...params) {
+        if (!condition || typeof condition !== "string") {
+            throw new Error("Condition must be a non-empty string");
+        }
+        this.validateCondition(condition);
+        this.validateParams(params);
         this._conditions.push(`WHERE ${condition}`);
         this._params.push(...params);
         return this;
     }
     andWhere(condition, ...params) {
+        this.validateCondition(condition);
+        this.validateParams(params);
         this._conditions.push(`AND ${condition}`);
         this._params.push(...params);
         return this;
     }
     orWhere(condition, ...params) {
+        this.validateCondition(condition);
+        this.validateParams(params);
         this._conditions.push(`OR ${condition}`);
         this._params.push(...params);
         return this;
@@ -96,8 +158,9 @@ export class SqliteBruv {
         return this;
     }
     get() {
-        if (this._cacheName && this._hotCache[this._cacheName])
+        if (this._cacheName && this._hotCache[this._cacheName]) {
             this._hotCache[this._cacheName];
+        }
         const { query, params } = this.build();
         if (this._query) {
             return { query, params };
@@ -105,8 +168,9 @@ export class SqliteBruv {
         return this.run(query, params, { single: false });
     }
     getOne() {
-        if (this._cacheName && this._hotCache[this._cacheName])
+        if (this._cacheName && this._hotCache[this._cacheName]) {
             this._hotCache[this._cacheName];
+        }
         const { query, params } = this.build();
         if (this._query) {
             return { query, params };
@@ -114,6 +178,7 @@ export class SqliteBruv {
         return this.run(query, params, { single: true });
     }
     insert(data) {
+        data.id = Id();
         const columns = Object.keys(data).join(", ");
         const placeholders = Object.keys(data)
             .map(() => "?")
@@ -147,6 +212,92 @@ export class SqliteBruv {
         }
         return this.run(query, params);
     }
+    count() {
+        const query = `SELECT COUNT(*) as count  FROM ${this._tableName} ${this._conditions.join(" AND ")}`;
+        const params = [...this._params];
+        this.clear();
+        if (this._query) {
+            return { query, params };
+        }
+        return this.run(query, params);
+    }
+    async executeJsonQuery(query) {
+        if (!query.action) {
+            throw new Error("Action is required.");
+        }
+        if (!query.from) {
+            throw new Error("Table is required.");
+        }
+        let queryBuilder = this.from(query.from);
+        if (query.select)
+            queryBuilder = queryBuilder.select(...query.select);
+        if (query.limit)
+            queryBuilder = queryBuilder.limit(query.limit);
+        if (query.offset)
+            queryBuilder = queryBuilder.offset(query.offset);
+        if (query.cacheAs)
+            queryBuilder = queryBuilder.cacheAs(query.cacheAs);
+        if (query.where) {
+            for (const condition of query.where) {
+                queryBuilder = queryBuilder.where(condition.condition, ...condition.params);
+            }
+        }
+        if (query.andWhere) {
+            for (const condition of query.andWhere) {
+                queryBuilder = queryBuilder.andWhere(condition.condition, ...condition.params);
+            }
+        }
+        if (query.orWhere) {
+            for (const condition of query.orWhere) {
+                queryBuilder = queryBuilder.orWhere(condition.condition, ...condition.params);
+            }
+        }
+        if (query.orderBy) {
+            queryBuilder = queryBuilder.orderBy(query.orderBy.column, query.orderBy.direction);
+        }
+        let result;
+        try {
+            switch (query.action) {
+                case "get":
+                    result = await queryBuilder.get();
+                    break;
+                case "count":
+                    result = await queryBuilder.count();
+                    break;
+                case "getOne":
+                    result = await queryBuilder.getOne();
+                    break;
+                case "insert":
+                    if (!query.data) {
+                        throw new Error("Data is required for insert action.");
+                    }
+                    result = await queryBuilder.insert(query.data);
+                    break;
+                case "update":
+                    if (!query.data || !query.from || !query.where) {
+                        throw new Error("Data, from, and where are required for update action.");
+                    }
+                    result = await queryBuilder.update(query.data);
+                    break;
+                case "delete":
+                    if (!query.from || !query.where) {
+                        throw new Error("From and where are required for delete action.");
+                    }
+                    result = await queryBuilder.delete();
+                    break;
+                default:
+                    throw new Error("Invalid action specified.");
+            }
+            if (query.invalidateCache) {
+                queryBuilder.invalidateCache(query.invalidateCache);
+            }
+        }
+        catch (error) {
+            console.error("Query execution failed:", error);
+            throw new Error("Query execution failed.");
+        }
+        return result;
+    }
     build() {
         const query = [
             `SELECT ${this._columns.join(", ")} FROM ${this._tableName}`,
@@ -179,6 +330,13 @@ export class SqliteBruv {
     }) {
         if (this._logging) {
             console.log({ query, params });
+        }
+        if (this._turso) {
+            const results = await this.executeTursoQuery(query, params);
+            if (single) {
+                return results[0];
+            }
+            return results;
         }
         if (this._D1_api_key) {
             const res = await fetch(this._D1_url, {
@@ -214,6 +372,42 @@ export class SqliteBruv {
         }
         return this.db.run(query, params);
     }
+    async executeTursoQuery(query, params = []) {
+        if (!this._turso) {
+            throw new Error("Turso configuration not found");
+        }
+        const response = await fetch(this._turso.url, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${this._turso.authToken}`,
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                statements: [
+                    {
+                        q: query,
+                        params: params,
+                    },
+                ],
+            }),
+        });
+        if (!response.ok) {
+            throw new Error(`Turso API error: ${response.statusText}`);
+        }
+        const results = (await response.json())[0];
+        const { columns, rows } = results?.results || {};
+        if (results.error) {
+            throw new Error(`Turso API error: ${results.error}`);
+        }
+        const transformedRows = rows.map((row) => {
+            const rowObject = {};
+            columns.forEach((column, index) => {
+                rowObject[column] = row[index];
+            });
+            return rowObject;
+        });
+        return transformedRows;
+    }
     raw(raw, params = []) {
         return this.run(raw, params, { single: false });
     }
@@ -224,6 +418,7 @@ export class SqliteBruv {
     }
 }
 export class Schema {
+    string = "";
     name;
     db;
     columns;
@@ -237,9 +432,9 @@ export class Schema {
     queryRaw(raw) {
         return this.db?.from(this.name).raw(raw, []);
     }
-    induce() {
+    _induce() {
         const tables = Object.keys(this.columns);
-        const query = `CREATE TABLE IF NOT EXISTS ${this.name} (\n    id text PRIMARY KEY NOT NULL,\n     ${tables
+        this.string = `CREATE TABLE IF NOT EXISTS ${this.name} (\n    id text PRIMARY KEY NOT NULL,\n     ${tables
             .map((col, i) => col +
             " " +
             this.columns[col].type +
@@ -251,12 +446,15 @@ export class Schema {
             (i + 1 !== tables.length ? ",\n    " : "\n"))
             .join(" ")})`;
         try {
-            this.db?.db.run(query);
-            this.db?.dbMem.run(query);
+            this.db?.db.run(this.string);
+            this.db?.dbMem.run(this.string);
         }
         catch (error) {
-            console.log({ err: String(error), query });
+            console.log({ err: String(error), schema: this.string });
         }
+    }
+    toString() {
+        return this.string;
     }
 }
 async function getSchema(db) {
@@ -369,3 +567,23 @@ function isDuplicateMigration(newContent) {
     }
     return false;
 }
+const PROCESS_UNIQUE = randomBytes(5);
+const buffer = Buffer.alloc(12);
+export const Id = () => {
+    let index = ~~(Math.random() * 0xffffff);
+    const time = ~~(Date.now() / 1000);
+    const inc = (index = (index + 1) % 0xffffff);
+    buffer[3] = time & 0xff;
+    buffer[2] = (time >> 8) & 0xff;
+    buffer[1] = (time >> 16) & 0xff;
+    buffer[0] = (time >> 24) & 0xff;
+    buffer[4] = PROCESS_UNIQUE[0];
+    buffer[5] = PROCESS_UNIQUE[1];
+    buffer[6] = PROCESS_UNIQUE[2];
+    buffer[7] = PROCESS_UNIQUE[3];
+    buffer[8] = PROCESS_UNIQUE[4];
+    buffer[11] = inc & 0xff;
+    buffer[10] = (inc >> 8) & 0xff;
+    buffer[9] = (inc >> 16) & 0xff;
+    return buffer.toString("hex");
+};

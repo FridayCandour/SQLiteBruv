@@ -23,7 +23,38 @@ const user = new Schema<{
   },
 });
 
-// db.run(user.toString());
-new SqliteBruv({ schema: [user] });
-const a = await user.query.select("*").limit(16).get();
-console.log(a);
+const qb = new SqliteBruv({
+  schema: [user],
+  // turso: {
+  //   url: process.env.TURSO_URL!,
+  //   authToken: process.env.TURSO_AUTH_TOKEN!,
+  // },
+  D1: {
+    accountId: process.env.CFAccountId!,
+    databaseId: process.env.D1databaseId!,
+    apiKey: process.env.CFauthorizationToken!,
+  },
+});
+
+await qb.raw(user.toString());
+
+await qb.executeJsonQuery({
+  action: "insert",
+  where: [{ condition: "username =? ", params: ["JohnDoe"] }],
+  data: {
+    name: "John Doe",
+    username: "JohnDoe",
+    age: 10,
+  },
+  from: "users",
+});
+
+const a = await user.query.count();
+console.log({ a });
+const result = await qb.executeJsonQuery({
+  action: "getOne",
+  where: [{ condition: "username =? ", params: ["JohnDoe"] }],
+  from: "users",
+});
+
+console.log({ result });

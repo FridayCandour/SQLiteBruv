@@ -13,6 +13,36 @@ interface SchemaColumnOptions {
     relationType?: "MANY" | "ONE";
 }
 type Params = string | number | null | boolean;
+interface Query {
+    from: string;
+    select?: string[];
+    where?: {
+        condition: string;
+        params: any[];
+    }[];
+    andWhere?: {
+        condition: string;
+        params: any[];
+    }[];
+    orWhere?: {
+        condition: string;
+        params: any[];
+    }[];
+    orderBy?: {
+        column: string;
+        direction: "ASC" | "DESC";
+    };
+    limit?: number;
+    offset?: number;
+    cacheAs?: string;
+    invalidateCache?: string;
+    action?: "get" | "getOne" | "insert" | "update" | "delete" | "count";
+    data?: any;
+}
+interface TursoConfig {
+    url: string;
+    authToken: string;
+}
 export declare class SqliteBruv<T extends Record<string, Params> = Record<string, Params>> {
     static migrationFolder: string;
     db: any;
@@ -30,18 +60,25 @@ export declare class SqliteBruv<T extends Record<string, Params> = Record<string
     private _D1_url?;
     private _logging;
     private _hotCache;
-    constructor({ D1, logging, schema, name, }: {
+    private _turso?;
+    private readonly MAX_PARAMS;
+    private readonly ALLOWED_OPERATORS;
+    private readonly DANGEROUS_PATTERNS;
+    constructor({ D1, turso, logging, schema, name, }: {
         D1?: {
             accountId: string;
             databaseId: string;
             apiKey: string;
         };
+        turso?: TursoConfig;
         schema: Schema[];
         logging?: boolean;
         name?: string;
     });
     from<Model extends Record<string, any> = Record<string, any>>(tableName: string): SqliteBruv<Model>;
     select(...columns: string[]): this;
+    private validateCondition;
+    private validateParams;
     where(condition: string, ...params: Params[]): this;
     andWhere(condition: string, ...params: Params[]): this;
     orWhere(condition: string, ...params: Params[]): this;
@@ -55,13 +92,19 @@ export declare class SqliteBruv<T extends Record<string, Params> = Record<string
     insert(data: T): Promise<T>;
     update(data: Partial<T>): Promise<T>;
     delete(): Promise<T>;
+    count(): Promise<{
+        count: number;
+    }>;
+    executeJsonQuery(query: Query): Promise<any>;
     private build;
     clear(): void;
     private run;
+    private executeTursoQuery;
     raw(raw: string, params?: (string | number | boolean)[]): Promise<any>;
     cacheResponse(response: any): Promise<any>;
 }
 export declare class Schema<Model extends Record<string, any> = {}> {
+    private string;
     name: string;
     db?: SqliteBruv;
     columns: {
@@ -70,6 +113,8 @@ export declare class Schema<Model extends Record<string, any> = {}> {
     constructor(def: BruvSchema<Model>);
     get query(): SqliteBruv<Record<string, any>>;
     queryRaw(raw: string): Promise<any>;
-    induce(): void;
+    _induce(): void;
+    toString(): string;
 }
+export declare const Id: () => string;
 export {};
